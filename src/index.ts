@@ -23,7 +23,23 @@ import type { OrderPeriod } from './types.js';
 // Cache de recherche : productId → SearchProduct complet
 // Nécessaire car add_to_cart reçoit seulement productId mais client.addToCart()
 // a besoin de offerId / sellerId / sellerType
+// Le cache s'accumule entre recherches (sinon add_to_cart n'accepte que les produits
+// de la dernière recherche), borné en LRU via l'ordre d'insertion de la Map.
 const searchCache = new Map<string, SearchProduct>();
+const SEARCH_CACHE_MAX = 500;
+
+/** Ajoute des produits au cache (les plus récents en fin), en évinçant les plus anciens. */
+function cacheProducts(products: SearchProduct[]): void {
+  for (const p of products) {
+    searchCache.delete(p.productId); // ré-insertion → devient le plus récent
+    searchCache.set(p.productId, p);
+  }
+  while (searchCache.size > SEARCH_CACHE_MAX) {
+    const oldest = searchCache.keys().next().value;
+    if (oldest === undefined) break;
+    searchCache.delete(oldest);
+  }
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -59,8 +75,7 @@ async function main(): Promise<void> {
     async ({ query }) => {
       try {
         const results = await client.search(query);
-        searchCache.clear();
-        for (const p of results) searchCache.set(p.productId, p);
+        cacheProducts(results);
         return ok(results);
       } catch (err) {
         return fail(err);
@@ -84,7 +99,7 @@ async function main(): Promise<void> {
     async ({ query, category }) => {
       try {
         const results = await client.searchPromos(query, category);
-        for (const p of results) searchCache.set(p.productId, p);
+        cacheProducts(results);
         return ok(results);
       } catch (err) {
         return fail(err);
