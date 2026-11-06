@@ -28,6 +28,7 @@
 
 import type { CookieProvider, Store } from '../types.js';
 import { Throttler } from './throttle.js';
+import { decode } from './html-utils.js';
 
 // ─── Types géocodage ──────────────────────────────────────────────────────────
 
@@ -42,17 +43,6 @@ interface GeoPlace {
 
 function attr(tag: string, name: string): string | undefined {
   return tag.match(new RegExp(`${name}="([^"]*)"`  ))?.[1];
-}
-
-function decode(text: string): string {
-  return text
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
-    .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(parseInt(dec, 10)))
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&nbsp;/g, ' ');
 }
 
 // ─── StoreLocator ─────────────────────────────────────────────────────────────

@@ -7,23 +7,25 @@ export function parsePrice(text: string): number {
 
 /** Table des entités HTML nommées courantes. */
 const NAMED_ENTITIES: Record<string, string> = {
-  '&amp;': '&',
-  '&lt;': '<',
-  '&gt;': '>',
-  '&quot;': '"',
-  '&#39;': "'",
-  '&apos;': "'",
-  '&nbsp;': ' ',
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+  nbsp: ' ',
 };
 
 /**
- * Décode les entités HTML (nommées + numériques décimales et hexadécimales).
- * Les entités nommées sont traitées en un seul passage pour éviter le double-décodage
- * (ex. "&amp;lt;" → "&lt;" et non "<").
+ * Décode les entités HTML : nommées courantes + toutes les numériques décimales
+ * (&#39;) et hexadécimales (&#x27;). Un seul passage pour éviter le double-décodage
+ * (ex. "&amp;lt;" → "&lt;" et non "<"). Les entités inconnues sont laissées telles quelles.
  */
 export function decode(text: string): string {
-  return text
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
-    .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(parseInt(dec, 10)))
-    .replace(/&(?:amp|lt|gt|quot|#39|apos|nbsp);/g, (m) => NAMED_ENTITIES[m] ?? m);
+  return text.replace(/&(#[xX][0-9a-fA-F]+|#\d+|[a-zA-Z]+);/g, (m, ent: string) => {
+    if (ent[0] === '#') {
+      const code = ent[1] === 'x' || ent[1] === 'X' ? parseInt(ent.slice(2), 16) : parseInt(ent.slice(1), 10);
+      return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : m;
+    }
+    return NAMED_ENTITIES[ent] ?? m;
+  });
 }

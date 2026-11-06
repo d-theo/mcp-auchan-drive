@@ -7,7 +7,7 @@ const SAMPLE_HTML = `
 <body>
   <article>
     <a href="/elle-vire-beurre-tendre/pr-C1264653">Voir le produit</a>
-    <strong>ELLE &amp; VIRE</strong>
+    <strong itemprop="brand">ELLE &amp; VIRE</strong>
     <p class="product-thumbnail__description">Beurre tendre doux 82%MG</p>
     <div class="product-price">2,98 €</div>
     <span>11,92 € / kg</span>
@@ -21,7 +21,7 @@ const SAMPLE_HTML = `
   </article>
   <article>
     <a href="/president-beurre/pr-C9876543">Voir le produit</a>
-    <strong>PRÉSIDENT</strong>
+    <strong itemprop="brand">PRÉSIDENT</strong>
     <p class="product-thumbnail__description">Beurre doux 250g</p>
     <div class="product-price">3,20 €</div>
     <span>12,80 € / kg</span>
@@ -63,6 +63,32 @@ describe('parseSearchResults', () => {
   it('extrait la marque et décode les entités HTML', () => {
     const [p] = parseSearchResults(SAMPLE_HTML);
     expect(p.brand).toBe('ELLE & VIRE'); // &amp; → &
+  });
+
+  it("n'utilise pas la mention légale comme marque pour un produit sans marque", () => {
+    const html = `
+      <article>
+        <p class="product-thumbnail__description">Avocat</p>
+        <strong>Interdiction de vente de boissons alcooliques aux mineurs de moins de 18 ans</strong>
+        <div class="product-price">1,29 €</div>
+        <div class="quantity-selector"
+             data-product-id="p-1" data-offer-id="o-1"
+             data-seller-id="s-1" data-seller-type="GROCERY"></div>
+      </article>`;
+    const [p] = parseSearchResults(html);
+    expect(p.brand).toBeUndefined();
+  });
+
+  it('prend le premier <strong> de la description si itemprop="brand" est absent', () => {
+    const html = `
+      <article>
+        <p class="product-thumbnail__description"><strong>AUCHAN BIO</strong> Oeufs frais</p>
+        <div class="quantity-selector"
+             data-product-id="p-2" data-offer-id="o-2"
+             data-seller-id="s-2" data-seller-type="GROCERY"></div>
+      </article>`;
+    const [p] = parseSearchResults(html);
+    expect(p.brand).toBe('AUCHAN BIO');
   });
 
   it('parse le prix en centimes', () => {

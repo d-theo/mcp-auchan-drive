@@ -79,10 +79,13 @@ export function parseSearchResults(html: string): SearchProduct[] {
       ? decode(descM[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim())
       : '';
 
-    // Marque — cherche d'abord dans la description (structure actuelle), puis dans ctx (fallback)
+    // Marque — uniquement le <strong itemprop="brand"> de la carte, sinon le premier
+    // <strong> de la description. Pas de fallback sur n'importe quel <strong> de la
+    // carte : pour les produits sans marque (fruits, poisson frais…), il capturait la
+    // mention légale "Interdiction de vente de boissons alcooliques aux mineurs…".
     const brandM =
-      (descM?.[1] ?? '').match(/<strong[^>]*>\s*([^<]+)\s*<\/strong>/) ??
-      ctx.match(/<strong[^>]*>\s*([^<]+)\s*<\/strong>/);
+      ctx.match(/<strong[^>]*itemprop="brand"[^>]*>\s*([^<]+?)\s*<\/strong>/) ??
+      (descM?.[1] ?? '').match(/<strong[^>]*>\s*([^<]+?)\s*<\/strong>/);
     const brand = brandM ? decode(brandM[1].trim()) : undefined;
 
     // Prix principal
