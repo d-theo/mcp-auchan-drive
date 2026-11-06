@@ -28,7 +28,11 @@ interface RawCartLine {
   offerId: string;
   desiredQuantity: number;
   desiredType: string;
+  deltaQuantity?: number;
   offering?: {
+    actualQuantity?: number;
+    maxQuantity?: number;
+    stockDetail?: unknown;
     context?: {
       seller?: { id: string; type: string };
     };
@@ -38,10 +42,13 @@ interface RawCartLine {
 interface RawCartInner {
   id: string;
   items?: RawCartLine[];
+  contentWarnings?: unknown[];
 }
 
 interface RawCartResponse {
-  cart?: { cart?: RawCartInner };
+  // Champs ignorés par mapCart mais susceptibles de porter un refus / une info de dispo
+  revisedItems?: unknown[];
+  cart?: { cart?: RawCartInner; items?: unknown[]; changes?: unknown[] };
 }
 
 // ─── AuchanClient ─────────────────────────────────────────────────────────────
@@ -331,12 +338,16 @@ export class AuchanClient {
       mbaAvailabilityNeeded: true,
     });
 
+    const previousQty = raw?.cart?.cart?.items?.find((l) => l.productId === productId)?.desiredQuantity ?? 0;
+
     const response = await this.request(`${this.baseUrl}/cart/update`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body,
     });
-    return this.enrichCartLabels(mapCart(await response.json()));
+    const updated = (await response.json()) as RawCartResponse;
+    this.assertLineQuantity(updated, productId, previousQty + quantity, 'Produit non ajouté');
+    return this.enrichCartLabels(mapCart(updated));
   }
 
   /** Mise à jour de la quantité d'un article déjà dans le panier. */
@@ -370,7 +381,9 @@ export class AuchanClient {
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body,
     });
-    return this.enrichCartLabels(mapCart(await response.json()));
+    const updated = (await response.json()) as RawCartResponse;
+    this.assertLineQuantity(updated, productId, quantity, 'Quantité non mise à jour');
+    return this.enrichCartLabels(mapCart(updated));
   }
 
   /** Suppression d'un article du panier (desiredQuantity: 0). */
@@ -406,6 +419,53 @@ export class AuchanClient {
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Vérifie qu'après un POST /cart/update la ligne existe avec la quantité attendue.
+   * Auchan répond parfois 200 avec le panier inchangé (produit indisponible dans le
+   * drive) : sans ce contrôle, l'outil renverrait un faux succès.
+   */
+  private assertLineQuantity(
+    raw: RawCartResponse,
+    productId: string,
+    expected: number,
+    prefix: string,
+  ): void {
+    const line = raw?.cart?.cart?.items?.find((l) => l.productId === productId);
+    const desired = line?.desiredQuantity ?? 0;
+    const actual = line?.offering?.actualQuantity;
+    if (line && desired === expected && (actual === undefined || actual >= expected)) return;
+
+    const observed = line
+      ? `quantité obtenue ${desired}${actual !== undefined ? ` (réelle ${actual})` : ''}, attendue ${expected}`
+      : `ligne absente du panier renvoyé, quantité attendue ${expected}`;
+    const details = this.describeCartRejection(raw, line);
+    throw new Error(
+      `${prefix} — probablement indisponible dans ce drive (produit ${productId} : ${observed}).` +
+        (details ? ` Détails Auchan : ${details}` : ''),
+    );
+  }
+
+  /** Extrait les infos de refus/disponibilité que mapCart ignore (best-effort, tronqué). */
+  private describeCartRejection(raw: RawCartResponse, line: RawCartLine | undefined): string {
+    const info: Record<string, unknown> = {};
+    const nonEmpty = (v: unknown): boolean =>
+      v !== undefined && v !== null && !(Array.isArray(v) && v.length === 0) &&
+      !(typeof v === 'object' && !Array.isArray(v) && Object.keys(v as object).length === 0);
+
+    if (nonEmpty(raw?.revisedItems)) info.revisedItems = raw.revisedItems;
+    if (nonEmpty(raw?.cart?.cart?.contentWarnings)) info.contentWarnings = raw.cart?.cart?.contentWarnings;
+    if (nonEmpty(raw?.cart?.changes)) info.changes = raw.cart?.changes;
+    if (nonEmpty(raw?.cart?.items)) info.items = raw.cart?.items;
+    if (line) {
+      if (nonEmpty(line.deltaQuantity) && line.deltaQuantity !== 0) info.deltaQuantity = line.deltaQuantity;
+      if (nonEmpty(line.offering?.maxQuantity)) info.maxQuantity = line.offering?.maxQuantity;
+      if (nonEmpty(line.offering?.stockDetail)) info.stockDetail = line.offering?.stockDetail;
+    }
+    if (Object.keys(info).length === 0) return '';
+    const text = JSON.stringify(info);
+    return text.length > 600 ? `${text.slice(0, 600)}…` : text;
+  }
 
   private findLine(raw: RawCartResponse, productId: string): RawCartLine {
     const lines = raw?.cart?.cart?.items ?? [];

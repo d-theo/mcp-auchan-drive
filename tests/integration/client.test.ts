@@ -11,7 +11,7 @@ import cartRemoveFixture from '../fixtures/cart-remove-response.json' assert { t
 const SEARCH_HTML = `
 <html><body>
 <article>
-<strong>ELLE &amp; VIRE</strong>
+<strong itemprop="brand">ELLE &amp; VIRE</strong>
 <p class="product-thumbnail__description">Beurre tendre doux 82%MG</p>
 <div class="product-price">2,98 €</div>
 <span>11,92 € / kg</span>
@@ -238,6 +238,21 @@ describe('AuchanClient.addToCart', () => {
     expect(body.items[0].productId).toBe('acfdc139-5da2-4e2c-b652-5687fa2932b1');
     expect(body.items[0].desiredQuantity).toBe(1);
     expect(body.consentId).toBe('consent-uuid');
+  });
+
+  it('lève une erreur si Auchan renvoie le panier inchangé (produit indisponible)', async () => {
+    const fetchFn = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve(cartGetFixture) } as Response)
+      .mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve(cartGetFixture) } as Response);
+
+    const client = new AuchanClient(fakeCookies(), fastThrottler(), 'https://www.auchan.fr', fetchFn);
+    await expect(client.addToCart(
+      'acfdc139-5da2-4e2c-b652-5687fa2932b1',
+      '19f46dfd-f09f-5533-9958-a71f53c6adbb',
+      'b42fbf5b-51d4-42d0-bad8-abe4e6963846',
+      'GROCERY',
+      1,
+    )).rejects.toThrow('Produit non ajouté — probablement indisponible dans ce drive');
   });
 });
 
